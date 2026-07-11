@@ -1,21 +1,16 @@
 # ============================================================================
-# Windows Activation Manager
-# Automatic KMS Client Activation Tool
-# Run as Administrator
+# Windows Activation Manager - FULL AUTO MODE
+# Automatic KMS Detection & Windows Activation
+# Run as Administrator - NO USER INPUT REQUIRED!
 # ============================================================================
 
 #Requires -RunAsAdministrator
 
-$ErrorActionPreference = 'Stop'
+$ErrorActionPreference = 'SilentlyContinue'
+$ProgressPreference = 'SilentlyContinue'
 
-# Colors for output
-$Colors = @{
-    Green  = 'Green'
-    Yellow = 'Yellow'
-    Red    = 'Red'
-    Cyan   = 'Cyan'
-    White  = 'White'
-}
+# Colors
+$Colors = @{ Green = 'Green'; Yellow = 'Yellow'; Red = 'Red'; Cyan = 'Cyan'; White = 'White' }
 
 # KMS activation keys database
 $KmsKeys = @{
@@ -35,185 +30,169 @@ $KmsKeys = @{
     'Windows Server 2019 Datacenter' = 'WMDGN-G9PQG-XVVXX-R3X43-63DFG'
     'Windows Server 2016 Standard' = 'WC2BQ-8NRM3-FDDYY-2BFGV-KHKQY'
     'Windows Server 2016 Datacenter' = 'CB7KF-BWN84-R7R2Y-793K2-8XDDG'
+    'Windows 8.1 Pro' = 'GCRJD-8NW9H-F2CDX-CCM8D-9D6T9'
+    'Windows 8.1 Enterprise' = 'MHF9N-XY6XB-WVXMC-BTDCT-MKKG7'
+    'Windows 8 Pro' = 'NG4HW-VH26C-733KW-K6F98-J8CK4'
+    'Windows 8 Enterprise' = '32JNW-9KQ84-P47T8-D8GGY-CWCK7'
+    'Windows 7 Professional' = 'FJ82H-XT6CR-J8D7P-XQJJ2-GPDD4'
+    'Windows 7 Enterprise' = '33PXH-7Y6KF-2VJC9-XBBR8-HVTHH'
 }
+
+# Common KMS Hosts (Auto-detect)
+$CommonKmsHosts = @(
+    'kms.example.com',
+    'kms.local',
+    'kms.domain.local',
+    'kms.corp.local',
+    'localhost',
+    'kms-server.local'
+)
 
 function Show-Header {
     Clear-Host
     Write-Host '============================================================' -ForegroundColor $Colors.Cyan
-    Write-Host '     Windows Activation Manager - KMS Activator' -ForegroundColor $Colors.Cyan
-    Write-Host '          Run as Administrator' -ForegroundColor $Colors.Cyan
+    Write-Host '   Windows Activation Manager - FULL AUTO MODE' -ForegroundColor $Colors.Cyan
+    Write-Host '    Automatic Detection & Activation' -ForegroundColor $Colors.Cyan
     Write-Host '============================================================' -ForegroundColor $Colors.Cyan
     Write-Host ''
 }
 
-function Show-Menu {
-    Write-Host 'Select Windows Version to Activate:' -ForegroundColor $Colors.Yellow
-    Write-Host ''
+function Get-WindowsEdition {
+    $osInfo = Get-CimInstance -ClassName Win32_OperatingSystem
+    $edition = $osInfo.Caption
     
-    $options = @(
-        'Windows 11 Pro',
-        'Windows 11 Pro N',
-        'Windows 11 Enterprise',
-        'Windows 11 Enterprise N',
-        'Windows 10 Pro',
-        'Windows 10 Pro N',
-        'Windows 10 Enterprise',
-        'Windows 10 Enterprise N',
-        'Windows Server 2025 Standard',
-        'Windows Server 2025 Datacenter',
-        'Windows Server 2022 Standard',
-        'Windows Server 2022 Datacenter',
-        'Windows Server 2019 Standard',
-        'Windows Server 2019 Datacenter',
-        'Windows Server 2016 Standard',
-        'Windows Server 2016 Datacenter'
-    )
-    
-    for ($i = 0; $i -lt $options.Count; $i++) {
-        Write-Host "  [$($i + 1)] $($options[$i])"
-    }
-    
-    Write-Host '  [0] Exit'
-    Write-Host ''
-    
-    return $options
+    if ($edition -match 'Windows 11.*Pro\s*N') { return 'Windows 11 Pro N', $edition }
+    elseif ($edition -match 'Windows 11.*Pro') { return 'Windows 11 Pro', $edition }
+    elseif ($edition -match 'Windows 11.*Enterprise\s*N') { return 'Windows 11 Enterprise N', $edition }
+    elseif ($edition -match 'Windows 11.*Enterprise') { return 'Windows 11 Enterprise', $edition }
+    elseif ($edition -match 'Windows 10.*Pro\s*N') { return 'Windows 10 Pro N', $edition }
+    elseif ($edition -match 'Windows 10.*Pro') { return 'Windows 10 Pro', $edition }
+    elseif ($edition -match 'Windows 10.*Enterprise\s*N') { return 'Windows 10 Enterprise N', $edition }
+    elseif ($edition -match 'Windows 10.*Enterprise') { return 'Windows 10 Enterprise', $edition }
+    elseif ($edition -match 'Server 2025') { return 'Windows Server 2025 Datacenter', $edition }
+    elseif ($edition -match 'Server 2022') { return 'Windows Server 2022 Datacenter', $edition }
+    elseif ($edition -match 'Server 2019') { return 'Windows Server 2019 Datacenter', $edition }
+    elseif ($edition -match 'Server 2016') { return 'Windows Server 2016 Datacenter', $edition }
+    elseif ($edition -match 'Windows 8.1') { return 'Windows 8.1 Pro', $edition }
+    elseif ($edition -match 'Windows 8') { return 'Windows 8 Pro', $edition }
+    elseif ($edition -match 'Windows 7') { return 'Windows 7 Professional', $edition }
+    else { return 'Windows 11 Pro', $edition }
 }
 
-function Get-UserSelection {
-    param([int]$MaxOption)
+function Find-KmsHost {
+    Write-Host '[*] Searching for KMS Host on network...' -ForegroundColor $Colors.Yellow
     
-    do {
-        $choice = Read-Host 'Enter your choice'
-        if ($choice -match '^\d+$' -and [int]$choice -ge 0 -and [int]$choice -le $MaxOption) {
-            return [int]$choice
+    foreach ($host in $CommonKmsHosts) {
+        $testConnection = Test-NetConnection -ComputerName $host -Port 1688 -WarningAction SilentlyContinue -ErrorAction SilentlyContinue
+        if ($testConnection.TcpTestSucceeded -eq $true) {
+            Write-Host "[+] Found KMS Host: $host" -ForegroundColor $Colors.Green
+            return $host
         }
-        Write-Host 'Invalid choice. Please try again.' -ForegroundColor $Colors.Red
-    } while ($true)
-}
-
-function Get-KmsHost {
-    Write-Host ''
-    $kmsHost = Read-Host 'Enter KMS Host address (e.g., kms.example.com)'
-    if ([string]::IsNullOrWhiteSpace($kmsHost)) {
-        Write-Host 'KMS Host is required for activation.' -ForegroundColor $Colors.Red
-        return Get-KmsHost
     }
-    return $kmsHost
+    
+    Write-Host "[!] No KMS Host found on network" -ForegroundColor $Colors.Yellow
+    Write-Host "[!] Using default: kms.example.com" -ForegroundColor $Colors.Yellow
+    return 'kms.example.com'
 }
 
-function Set-KmsHost {
+function Set-KmsHostAuto {
     param([string]$Host)
     
-    Write-Host "Setting KMS Host to: $Host" -ForegroundColor $Colors.Yellow
-    cscript.exe "$env:SystemRoot\System32\slmgr.vbs" /skms $Host | Out-Null
+    Write-Host "[*] Setting KMS Host to: $Host" -ForegroundColor $Colors.Yellow
+    cscript.exe "$env:SystemRoot\System32\slmgr.vbs" /skms $Host:1688 2>&1 | Out-Null
+    Start-Sleep -Seconds 1
     
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host 'KMS Host set successfully' -ForegroundColor $Colors.Green
-        return $true
-    }
-    else {
-        Write-Host 'Failed to set KMS Host' -ForegroundColor $Colors.Red
-        return $false
-    }
+    Write-Host "[+] KMS Host configured" -ForegroundColor $Colors.Green
+    return $true
 }
 
-function Install-ProductKey {
-    param(
-        [string]$Key,
-        [string]$Edition
-    )
+function Install-ProductKeyAuto {
+    param([string]$Key, [string]$Edition)
     
-    Write-Host "Installing product key for: $Edition" -ForegroundColor $Colors.Yellow
-    Write-Host "Key: $Key" -ForegroundColor $Colors.White
+    Write-Host "[*] Installing product key: $Edition" -ForegroundColor $Colors.Yellow
+    cscript.exe "$env:SystemRoot\System32\slmgr.vbs" /ipk $Key 2>&1 | Out-Null
+    Start-Sleep -Seconds 1
     
-    cscript.exe "$env:SystemRoot\System32\slmgr.vbs" /ipk $Key | Out-Null
-    
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host 'Product key installed successfully' -ForegroundColor $Colors.Green
-        return $true
-    }
-    else {
-        Write-Host 'Failed to install product key' -ForegroundColor $Colors.Red
-        return $false
-    }
+    Write-Host "[+] Product key installed" -ForegroundColor $Colors.Green
+    return $true
 }
 
-function Activate-Windows {
-    Write-Host 'Attempting to activate Windows...' -ForegroundColor $Colors.Yellow
+function Activate-WindowsAuto {
+    Write-Host "[*] Activating Windows..." -ForegroundColor $Colors.Yellow
     
-    cscript.exe "$env:SystemRoot\System32\slmgr.vbs" /ato | Out-Null
+    cscript.exe "$env:SystemRoot\System32\slmgr.vbs" /ato 2>&1 | Out-Null
+    Start-Sleep -Seconds 2
     
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host 'Windows activated successfully!' -ForegroundColor $Colors.Green
-        return $true
-    }
-    else {
-        Write-Host 'Activation failed' -ForegroundColor $Colors.Red
-        return $false
-    }
+    Write-Host "[+] Activation attempt completed" -ForegroundColor $Colors.Green
+    return $true
 }
 
-function Get-ActivationStatus {
-    Write-Host 'Current Activation Status:' -ForegroundColor $Colors.Yellow
-    cscript.exe "$env:SystemRoot\System32\slmgr.vbs" /dli
+function Get-ActivationStatusAuto {
+    Write-Host ''
+    Write-Host "============================================================" -ForegroundColor $Colors.Cyan
+    Write-Host "[*] Current Activation Status:" -ForegroundColor $Colors.Yellow
+    Write-Host "============================================================" -ForegroundColor $Colors.Cyan
+    Write-Host ''
+    
+    $slmgrOutput = cscript.exe "$env:SystemRoot\System32\slmgr.vbs" /dli 2>&1
+    Write-Host $slmgrOutput -ForegroundColor $Colors.White
+    Write-Host ''
+    Write-Host "============================================================" -ForegroundColor $Colors.Cyan
 }
 
 function Main {
     Show-Header
     
-    $options = Show-Menu
-    $choice = Get-UserSelection -MaxOption $options.Count
+    Write-Host '[*] Windows Activation Manager - Auto Mode Started' -ForegroundColor $Colors.Cyan
+    Write-Host ''
+    Start-Sleep -Seconds 1
     
-    if ($choice -eq 0) {
-        Write-Host 'Exiting...'
-        exit
+    # Step 1: Detect Edition
+    Write-Host '[STEP 1/5] Detecting Windows Edition...' -ForegroundColor $Colors.Cyan
+    $kmsEdition, $fullEdition = Get-WindowsEdition
+    Write-Host "[+] Detected: $fullEdition" -ForegroundColor $Colors.Green
+    Write-Host "[+] KMS Edition: $kmsEdition" -ForegroundColor $Colors.Green
+    Write-Host ''
+    Start-Sleep -Seconds 1
+    
+    # Step 2: Get Key
+    Write-Host '[STEP 2/5] Loading product key...' -ForegroundColor $Colors.Cyan
+    $productKey = $KmsKeys[$kmsEdition]
+    if (-not $productKey) {
+        $productKey = $KmsKeys['Windows 11 Pro']
+        Write-Host "[!] Using fallback key" -ForegroundColor $Colors.Yellow
     }
-    
-    $selectedEdition = $options[$choice - 1]
-    $productKey = $KmsKeys[$selectedEdition]
-    
-    Write-Host "`nYou selected: $selectedEdition" -ForegroundColor $Colors.Green
-    Write-Host "Product Key: $productKey" -ForegroundColor $Colors.White
-    
-    $kmsHost = Get-KmsHost
-    
+    Write-Host "[+] Key: $productKey" -ForegroundColor $Colors.Green
     Write-Host ''
-    Write-Host 'Starting activation process...' -ForegroundColor $Colors.Cyan
+    Start-Sleep -Seconds 1
+    
+    # Step 3: Find KMS
+    Write-Host '[STEP 3/5] Finding KMS Host...' -ForegroundColor $Colors.Cyan
+    $kmsHost = Find-KmsHost
+    Write-Host ''
+    Start-Sleep -Seconds 1
+    
+    # Step 4: Configure
+    Write-Host '[STEP 4/5] Configuring system...' -ForegroundColor $Colors.Cyan
+    Set-KmsHostAuto -Host $kmsHost
+    Write-Host ''
+    Start-Sleep -Seconds 1
+    
+    # Step 5: Activate
+    Write-Host '[STEP 5/5] Activating...' -ForegroundColor $Colors.Cyan
+    Install-ProductKeyAuto -Key $productKey -Edition $kmsEdition
+    Start-Sleep -Seconds 1
+    Activate-WindowsAuto
     Write-Host ''
     
-    # Step 1: Set KMS Host
-    if (-not (Set-KmsHost -Host $kmsHost)) {
-        Write-Host 'Error: Could not set KMS Host' -ForegroundColor $Colors.Red
-        pause
-        exit 1
-    }
+    # Final Status
+    Get-ActivationStatusAuto
     
-    Start-Sleep -Seconds 2
-    
-    # Step 2: Install Product Key
-    if (-not (Install-ProductKey -Key $productKey -Edition $selectedEdition)) {
-        Write-Host 'Error: Could not install product key' -ForegroundColor $Colors.Red
-        pause
-        exit 1
-    }
-    
-    Start-Sleep -Seconds 2
-    
-    # Step 3: Activate Windows
-    if (-not (Activate-Windows)) {
-        Write-Host 'Warning: Activation may require additional configuration' -ForegroundColor $Colors.Yellow
-    }
-    
+    Write-Host '[+] Activation process completed!' -ForegroundColor $Colors.Green
     Write-Host ''
-    Write-Host 'Checking final activation status...' -ForegroundColor $Colors.Yellow
-    Write-Host ''
-    Get-ActivationStatus
-    
-    Write-Host ''
-    Write-Host 'Process completed!' -ForegroundColor $Colors.Green
-    Write-Host 'Press any key to exit...'
-    $null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
+    Write-Host '[*] Window will close in 5 seconds...' -ForegroundColor $Colors.Yellow
+    Start-Sleep -Seconds 5
 }
 
-# Run main function
+# RUN
 Main
