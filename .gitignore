@@ -1,0 +1,17 @@
+# Windows
+Thumbs.db
+*.lnk
+.DS_Store
+
+# PowerShell
+*.ps1~
+*.psc1
+
+# IDEs
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
+
+# Logs
+*.log
